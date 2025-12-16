@@ -75,6 +75,14 @@
       .modal-row { display: grid; grid-template-columns: 1fr 180px; gap: 12px; align-items: center; padding: 6px 0 }
       .modal-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end }
       .select { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--content-bg); color: var(--text) }
+      .todo-item { display: flex; align-items: center; gap: 10px; padding: 12px 8px; border-bottom: 1px solid var(--border); transition: background .2s; }
+      .todo-item:last-child { border-bottom: none; }
+      .todo-item:hover { background: var(--hover); }
+      .todo-item.completed span { text-decoration: line-through; color: var(--muted); }
+      .todo-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+      .todo-item span { flex-grow: 1; }
+      .todo-item .delete-todo-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 5px; }
+      .todo-item .delete-todo-btn:hover { color: #ef4444; }
     </style>
     
   </head>
@@ -99,6 +107,13 @@
           <input id="titleInput" class="title" placeholder="请输入标题" />
           <input id="tagsInput" class="tags" placeholder="标签（逗号分隔）" />
           <textarea id="contentInput" class="content" placeholder="请输入内容"></textarea>
+        </div>
+        <div id="todoContainer" style="display: none; padding: 24px;">
+          <div class="todo-header" style="display: flex; gap: 10px; margin-bottom: 16px;">
+            <input id="todoInput" style="flex-grow: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" placeholder="添加新的待办事项..." />
+            <button id="addTodoBtn" style="background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 10px; cursor: pointer;">添加</button>
+          </div>
+          <ul id="todoListUl" style="list-style: none; padding: 0;"></ul>
         </div>
       </div>
     </div>
@@ -138,6 +153,12 @@
         tagModalBody: document.getElementById('tagModalBody'),
         tagModalSave: document.getElementById('tagModalSave'),
         tagModalCancel: document.getElementById('tagModalCancel'),
+        todoToggleBtn: document.getElementById('todoToggleBtn'),
+        editor: document.querySelector('.editor'),
+        todoContainer: document.getElementById('todoContainer'),
+        todoInput: document.getElementById('todoInput'),
+        addTodoBtn: document.getElementById('addTodoBtn'),
+        todoListUl: document.getElementById('todoListUl'),
       }
 
       function refresh(){ state.list = load(); renderList(); renderEditor() }
@@ -181,6 +202,68 @@
 
       function escapeHtml(str){ return String(str).replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])) }
 
+      const TODO_KEY = 'notebook_todos';
+      let todos = [];
+
+      function loadTodos() {
+        const raw = localStorage.getItem(TODO_KEY);
+        todos = raw ? JSON.parse(raw) : [];
+      }
+
+      function saveTodos() {
+        localStorage.setItem(TODO_KEY, JSON.stringify(todos));
+      }
+
+      function renderTodos() {
+        els.todoListUl.innerHTML = '';
+        todos.forEach(todo => {
+          const li = document.createElement('li');
+          li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+          li.innerHTML = `
+            <input type="checkbox" ${todo.completed ? 'checked' : ''} data-id="${todo.id}">
+            <span>${escapeHtml(todo.text)}</span>
+            <button class="delete-todo-btn" data-id="${todo.id}">&times;</button>
+          `;
+          els.todoListUl.appendChild(li);
+        });
+      }
+
+      function addTodo() {
+        const text = els.todoInput.value.trim();
+        if (text) {
+          todos.push({ id: Date.now(), text, completed: false });
+          els.todoInput.value = '';
+          saveTodos();
+          renderTodos();
+        }
+      }
+
+      function toggleTodo(id) {
+        const todo = todos.find(t => t.id === id);
+        if (todo) {
+          todo.completed = !todo.completed;
+          saveTodos();
+          renderTodos();
+        }
+      }
+
+      function deleteTodo(id) {
+        todos = todos.filter(t => t.id !== id);
+        saveTodos();
+        renderTodos();
+      }
+
+      function toggleView(showTodo) {
+        if (showTodo) {
+          els.editor.style.display = 'none';
+          els.todoContainer.style.display = 'block';
+        } else {
+          els.editor.style.display = 'grid';
+          els.todoContainer.style.display = 'none';
+        }
+      }
+
+
       els.createBtn.addEventListener('click', create)
       els.saveBtn.addEventListener('click', save)
       els.delBtn.addEventListener('click', del)
@@ -203,6 +286,20 @@
       els.tagsInput.addEventListener('input', scheduleSave)
       els.contentInput.addEventListener('input', scheduleSave)
 
+      els.todoToggleBtn.addEventListener('click', () => toggleView(els.editor.style.display !== 'none'));
+      els.addTodoBtn.addEventListener('click', addTodo);
+      els.todoInput.addEventListener('keypress', e => { if (e.key === 'Enter') addTodo(); });
+      els.todoListUl.addEventListener('click', e => {
+        if (e.target.matches('input[type="checkbox"]')) {
+          toggleTodo(Number(e.target.dataset.id));
+        }
+        if (e.target.matches('.delete-todo-btn')) {
+          deleteTodo(Number(e.target.dataset.id));
+        }
+      });
+
+      loadTodos();
+      renderTodos();
       refresh()
     </script>
   </body>
