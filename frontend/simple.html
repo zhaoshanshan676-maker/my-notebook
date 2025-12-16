@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>开发记事本（简易版）</title>
+    <style>
+      :root {
+        --bg: #f7f8fb;
+        --sidebar-bg: #ffffff;
+        --content-bg: #ffffff;
+        --text: #1f2d3d;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #3b82f6;
+        --accent-2: #9333ea;
+        --hover: #f0f4ff;
+        --shadow: 0 6px 20px rgba(0,0,0,0.06);
+        --radius: 12px;
+      }
+      [data-theme="dark"] {
+        --bg: #0f172a;
+        --sidebar-bg: #0b1220;
+        --content-bg: #0b1220;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --border: #1f2937;
+        --accent: #60a5fa;
+        --accent-2: #a78bfa;
+        --hover: #1e293b;
+        --shadow: 0 6px 20px rgba(0,0,0,0.35);
+      }
+      [data-theme="warm"] {
+        --bg: #fff7ed;
+        --sidebar-bg: #fffbf5;
+        --content-bg: #fffbf5;
+        --text: #402f1a;
+        --muted: #8b6f47;
+        --border: #fde68a;
+        --accent: #fb923c;
+        --accent-2: #f472b6;
+        --hover: #fff1e6;
+        --shadow: 0 6px 20px rgba(255,161,22,0.2);
+      }
+      body { margin:0; font-family:system-ui, -apple-system, Arial; background: var(--bg); color: var(--text); }
+      .layout { display:grid; grid-template-columns:320px 1fr; height:100vh; gap: 16px; padding: 16px }
+      .sidebar { background: var(--sidebar-bg); border: 1px solid var(--border); padding:12px; overflow:auto; border-radius: var(--radius); box-shadow: var(--shadow) }
+      .content { display:grid; grid-template-rows:auto auto 1fr; background: var(--content-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow) }
+      .toolbar { display:flex; gap:10px; padding:12px; border-bottom:1px solid var(--border); position: sticky; top: 0; backdrop-filter: saturate(1.2) blur(4px) }
+      .toolbar button { background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 10px; cursor: pointer; transition: transform .05s ease, opacity .2s; box-shadow: var(--shadow) }
+      .toolbar button:hover { transform: translateY(-1px) }
+      #delBtn { background: #ef4444 }
+      #exportJsonBtn, #exportMdBtn { background: var(--accent-2) }
+      #themeBtn { background: linear-gradient(135deg, var(--accent), var(--accent-2)) }
+      #tagColorBtn { background: linear-gradient(135deg, #10b981, #3b82f6) }
+      .search { padding:12px; border-bottom:1px solid var(--border) }
+      .search input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius: 10px; background: var(--content-bg); color: var(--text) }
+      .editor { display:grid; grid-template-rows:auto auto 1fr; padding: 12px }
+      .editor .title { font-size:22px; padding:12px; border:1px solid var(--border); border-radius: 10px; outline:none; background: var(--content-bg); color: var(--text) }
+      .editor .tags { margin-top:8px; padding:10px; border:1px solid var(--border); border-radius: 10px; outline:none; background: var(--content-bg); color: var(--text) }
+      .editor .content { margin-top:12px; padding:14px; outline:none; border:1px solid var(--border); border-radius: 12px; resize:none; width:100%; height:100%; background: var(--content-bg); color: var(--text) }
+      ul { list-style:none; padding:0; margin:0 }
+      .note-li { padding:10px; cursor:pointer; border-radius: 10px; border:1px solid transparent; transition: background .2s, border-color .2s }
+      .note-li:hover { background: var(--hover) }
+      .note-li.selected { border-color: var(--accent) }
+      .item { display:grid; grid-template-columns:1fr auto; gap:8px }
+      .title { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+      .meta { color: var(--muted); font-size:12px }
+      .tags-row { margin-top:6px }
+      .tag-badge { display:inline-block; padding:4px 8px; font-size:12px; border:1px solid var(--border); border-radius:999px; margin:2px 6px 2px 0 }
+      .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; align-items: center; justify-content: center; z-index: 1000 }
+      .modal { width: 520px; background: var(--content-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow) }
+      .modal-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600 }
+      .modal-body { padding: 12px 16px; max-height: 50vh; overflow: auto }
+      .modal-row { display: grid; grid-template-columns: 1fr 180px; gap: 12px; align-items: center; padding: 6px 0 }
+      .modal-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end }
+      .select { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--content-bg); color: var(--text) }
+    </style>
+    
+  </head>
+  <body>
+    <div id="app" class="layout">
+      <div class="sidebar">
+        <div class="header"><button id="createBtn">新建笔记</button></div>
+        <div id="loading" style="display:none">加载中</div>
+        <ul id="listUl"></ul>
+      </div>
+      <div class="content">
+        <div class="toolbar">
+          <button id="saveBtn" disabled>保存</button>
+          <button id="delBtn" disabled>删除</button>
+          <button id="exportJsonBtn">导出JSON</button>
+          <button id="exportMdBtn">导出Markdown</button>
+          <button id="themeBtn">切换主题</button>
+          <button id="tagColorBtn">标签颜色</button>
+        </div>
+        <div class="search"><input id="searchInput" placeholder="搜索" /></div>
+        <div class="editor">
+          <input id="titleInput" class="title" placeholder="请输入标题" />
+          <input id="tagsInput" class="tags" placeholder="标签（逗号分隔）" />
+          <textarea id="contentInput" class="content" placeholder="请输入内容"></textarea>
+        </div>
+      </div>
+    </div>
+    <div id="tagModal" class="modal-mask">
+      <div class="modal">
+        <div class="modal-header">标签颜色设置</div>
+        <div id="tagModalBody" class="modal-body"></div>
+        <div class="modal-footer">
+          <button id="tagModalCancel" class="toolbar-btn">取消</button>
+          <button id="tagModalSave" class="toolbar-btn">保存</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      const KEY = 'notebook_notes'
+      function load(){ const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : [] }
+      function saveAll(list){ localStorage.setItem(KEY, JSON.stringify(list)) }
+      function now(){ return new Date().toISOString() }
+      function fmt(s){ try{ return new Date(s).toLocaleString() }catch{ return s } }
+
+      const state = { list: [], currentId: null, q: '', saveTimer: null, autoSaveMs: 1200 }
+
+      const els = {
+        createBtn: document.getElementById('createBtn'),
+        saveBtn: document.getElementById('saveBtn'),
+        delBtn: document.getElementById('delBtn'),
+        exportJsonBtn: document.getElementById('exportJsonBtn'),
+        exportMdBtn: document.getElementById('exportMdBtn'),
+        themeBtn: document.getElementById('themeBtn'),
+        tagColorBtn: document.getElementById('tagColorBtn'),
+        searchInput: document.getElementById('searchInput'),
+        listUl: document.getElementById('listUl'),
+        titleInput: document.getElementById('titleInput'),
+        tagsInput: document.getElementById('tagsInput'),
+        contentInput: document.getElementById('contentInput'),
+        tagModal: document.getElementById('tagModal'),
+        tagModalBody: document.getElementById('tagModalBody'),
+        tagModalSave: document.getElementById('tagModalSave'),
+        tagModalCancel: document.getElementById('tagModalCancel'),
+      }
+
+      function refresh(){ state.list = load(); renderList(); renderEditor() }
+
+      function filtered(){ const like = (state.q||'').trim().toLowerCase(); const arr = [...state.list].sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at)); if(!like) return arr; return arr.filter(n=> (n.title||'').toLowerCase().includes(like) || (n.content||'').toLowerCase().includes(like) || (Array.isArray(n.tags)?n.tags.join(',').toLowerCase().includes(like):false)) }
+
+      function renderList(){ els.listUl.innerHTML = ''; const arr = filtered(); arr.forEach(n => { const li = document.createElement('li'); li.className = 'note-li' + (n.id===state.currentId?' selected':''); li.innerHTML = `<div class="item"><div class="title">${escapeHtml(n.title||'')}</div><div class="meta">${fmt(n.updated_at)}</div></div>` + buildTagsHTML(n.tags); li.addEventListener('click', ()=> select(n.id)); els.listUl.appendChild(li) }) }
+      function strHash(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0 } return h }
+      function buildTagsHTML(tags){ if(!tags || !tags.length) return ''; return '<div class="tags-row">' + tags.map(t=>{ const style = styleForTag(t); return `<span class=\"tag-badge\" style=\"${style}\">${escapeHtml(t)}</span>` }).join('') + '</div>' }
+      const COLOR_KEY = 'notebook_tag_colors'
+      function loadColors(){ const raw = localStorage.getItem(COLOR_KEY); return raw ? JSON.parse(raw) : {} }
+      function saveColors(map){ localStorage.setItem(COLOR_KEY, JSON.stringify(map)) }
+      function styleForTag(tag){ const map = loadColors(); const val = map[tag]; const theme = document.documentElement.getAttribute('data-theme') || 'light'; if(val){ const preset = styleForPreset(val, theme); if(preset) return preset; if(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(val)){ const bg = val; const br = val; return `background:${bg}; border-color:${br};` } } const sat = theme==='dark'?60:75; const lightBg = theme==='dark'?22:92; const border = theme==='dark'?35:84; const hue = strHash(tag)%360; return `background:hsl(${hue} ${sat}% ${lightBg}%); border-color:hsl(${hue} ${sat}% ${border}%);` }
+      function styleForPreset(name, theme){ const t = theme==='dark'; const dict = {
+        blue: t?{bg:'hsl(217 85% 25%)', br:'hsl(217 85% 40%)'}:{bg:'hsl(217 92% 92%)', br:'hsl(217 92% 84%)'},
+        green: t?{bg:'hsl(150 60% 22%)', br:'hsl(150 60% 38%)'}:{bg:'hsl(150 60% 92%)', br:'hsl(150 60% 82%)'},
+        red: t?{bg:'hsl(0 70% 22%)', br:'hsl(0 70% 38%)'}:{bg:'hsl(0 70% 92%)', br:'hsl(0 70% 82%)'},
+        orange: t?{bg:'hsl(24 80% 22%)', br:'hsl(24 80% 38%)'}:{bg:'hsl(24 80% 92%)', br:'hsl(24 80% 82%)'},
+        purple: t?{bg:'hsl(270 70% 22%)', br:'hsl(270 70% 38%)'}:{bg:'hsl(270 70% 92%)', br:'hsl(270 70% 82%)'},
+        pink: t?{bg:'hsl(330 70% 22%)', br:'hsl(330 70% 38%)'}:{bg:'hsl(330 70% 92%)', br:'hsl(330 70% 82%)'},
+        teal: t?{bg:'hsl(180 60% 22%)', br:'hsl(180 60% 38%)'}:{bg:'hsl(180 60% 92%)', br:'hsl(180 60% 82%)'},
+        cyan: t?{bg:'hsl(195 80% 22%)', br:'hsl(195 80% 38%)'}:{bg:'hsl(195 80% 92%)', br:'hsl(195 80% 82%)'},
+        yellow: t?{bg:'hsl(48 90% 22%)', br:'hsl(48 90% 38%)'}:{bg:'hsl(48 90% 92%)', br:'hsl(48 90% 82%)'},
+        gray: t?{bg:'hsl(220 10% 20%)', br:'hsl(220 10% 30%)'}:{bg:'hsl(220 10% 90%)', br:'hsl(220 10% 80%)'}
+      }[name]; if(!dict) return ''; return `background:${dict.bg}; border-color:${dict.br};` }
+
+      function renderEditor(){ const n = state.list.find(x=>x.id===state.currentId); const has = !!n; els.saveBtn.disabled = !has; els.delBtn.disabled = !has; els.titleInput.value = has ? (n.title||'') : ''; els.contentInput.value = has ? (n.content||'') : ''; els.tagsInput.value = has ? (Array.isArray(n.tags)?n.tags.join(','):'') : '' }
+
+      function select(id){ state.currentId = id; renderEditor() }
+
+      function create(){ const id = state.list.length ? Math.max(...state.list.map(i=>i.id))+1 : 1; const n = { id, title:'未命名', content:'', tags:[], updated_at: now() }; state.list.push(n); saveAll(state.list); select(id); renderList() }
+
+      function save(){ const idx = state.list.findIndex(i=>i.id===state.currentId); if(idx<0) return; const tags = els.tagsInput.value.split(',').map(s=>s.trim()).filter(s=>s); state.list[idx] = { ...state.list[idx], title: els.titleInput.value, content: els.contentInput.value, tags, updated_at: now() }; saveAll(state.list); renderList() }
+
+      function scheduleSave(){ if(state.currentId==null) return; if(state.saveTimer) clearTimeout(state.saveTimer); state.saveTimer = setTimeout(()=> save(), state.autoSaveMs) }
+
+      function del(){ state.list = state.list.filter(i=> i.id !== state.currentId); saveAll(state.list); state.currentId = null; renderList(); renderEditor() }
+
+      function exportJSON(){ const blob = new Blob([JSON.stringify(state.list,null,2)],{type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'notes.json'; a.click(); URL.revokeObjectURL(a.href) }
+      function exportMarkdown(){ const lines = state.list.map(n=>{ const t = `# ${n.title}\n`; const meta = `更新时间: ${fmt(n.updated_at)}\n标签: ${(Array.isArray(n.tags)?n.tags.join(', '):'')}\n\n`; const c = (n.content||'') + '\n\n'; return t + meta + c }); const blob = new Blob([lines.join('\n')],{type:'text/markdown'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'notes.md'; a.click(); URL.revokeObjectURL(a.href) }
+
+      function escapeHtml(str){ return String(str).replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])) }
+
+      els.createBtn.addEventListener('click', create)
+      els.saveBtn.addEventListener('click', save)
+      els.delBtn.addEventListener('click', del)
+      els.exportJsonBtn.addEventListener('click', exportJSON)
+      els.exportMdBtn.addEventListener('click', exportMarkdown)
+      const THEME_KEY = 'notebook_theme'
+      function applyTheme(theme){ document.documentElement.setAttribute('data-theme', theme); localStorage.setItem(THEME_KEY, theme) }
+      function cycleTheme(){ const order = ['light','warm','dark']; const cur = localStorage.getItem(THEME_KEY) || 'light'; const idx = order.indexOf(cur); const next = order[(idx+1)%order.length]; applyTheme(next) }
+      els.themeBtn.addEventListener('click', ()=>{ cycleTheme(); renderList() })
+      function uniqueTags(){ const set = new Set(); state.list.forEach(n => Array.isArray(n.tags)&&n.tags.forEach(t=> set.add(t))); return Array.from(set).sort() }
+      function openTagModal(){ const tags = uniqueTags(); const map = loadColors(); els.tagModalBody.innerHTML=''; tags.forEach(t=>{ const row = document.createElement('div'); row.className='modal-row'; const label = document.createElement('div'); label.textContent = t; const select = document.createElement('select'); select.className='select'; ['auto','blue','green','red','orange','purple','pink','teal','cyan','yellow','gray'].forEach(opt=>{ const o = document.createElement('option'); o.value=opt; o.textContent=opt; select.appendChild(o) }); select.value = map[t] || 'auto'; row.appendChild(label); row.appendChild(select); els.tagModalBody.appendChild(row) }); els.tagModal.style.display='flex' }
+      function closeTagModal(){ els.tagModal.style.display='none' }
+      function saveTagModal(){ const rows = els.tagModalBody.querySelectorAll('.modal-row'); const next = {}; rows.forEach(r=>{ const key = r.children[0].textContent; const val = r.children[1].value; if(val && val!=='auto') next[key]=val }); saveColors(next); closeTagModal(); renderList() }
+      els.tagColorBtn.addEventListener('click', openTagModal)
+      els.tagModalCancel.addEventListener('click', closeTagModal)
+      els.tagModalSave.addEventListener('click', saveTagModal)
+      applyTheme(localStorage.getItem(THEME_KEY) || 'light')
+      els.searchInput.addEventListener('input', e=> { state.q = e.target.value; renderList() })
+      els.titleInput.addEventListener('input', scheduleSave)
+      els.tagsInput.addEventListener('input', scheduleSave)
+      els.contentInput.addEventListener('input', scheduleSave)
+
+      refresh()
+    </script>
+  </body>
+  </html>
